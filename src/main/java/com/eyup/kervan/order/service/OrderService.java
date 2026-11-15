@@ -11,7 +11,9 @@ import com.eyup.kervan.order.dto.ShippingAddress;
 import com.eyup.kervan.order.entity.Address;
 import com.eyup.kervan.order.entity.Order;
 import com.eyup.kervan.order.entity.OrderItem;
+import com.eyup.kervan.order.entity.OrderStatus;
 import com.eyup.kervan.order.exception.EmptyCartException;
+import com.eyup.kervan.order.exception.InvalidStatusTransitionException;
 import com.eyup.kervan.order.exception.OrderNotCancellableException;
 import com.eyup.kervan.order.exception.OrderNotFoundException;
 import com.eyup.kervan.order.exception.ProductUnavailableException;
@@ -20,6 +22,7 @@ import com.eyup.kervan.order.repository.OrderRepository;
 import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -38,6 +41,16 @@ public class OrderService {
 
     // whitelist: blocks sorting by unknown or non-column fields, which would otherwise be a 500
     private static final Set<String> SORTABLE_FIELDS = Set.of("createdAt", "totalAmount", "status");
+
+    // target status -> statuses it may come from. PENDING -> CONFIRMED is also what the payment/event
+    // consumer will do later; the conditional update makes doing it twice harmless.
+    private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_PREVIOUS = Map.of(
+            OrderStatus.PENDING, Set.of(),
+            OrderStatus.CONFIRMED, Set.of(OrderStatus.PENDING),
+            OrderStatus.SHIPPED, Set.of(OrderStatus.CONFIRMED),
+            OrderStatus.DELIVERED, Set.of(OrderStatus.SHIPPED),
+            OrderStatus.CANCELLED, Set.of(OrderStatus.PENDING, OrderStatus.CONFIRMED)
+    );
 
     private final OrderRepository orderRepository;
     private final CartService cartService;
@@ -97,21 +110,44 @@ public class OrderService {
         // persistence context, because the update does not clear it.
         Order order = orderRepository.findWithItemsById(id).orElseThrow(OrderNotFoundException::new);
 
-        // Same lock order as checkout, so a concurrent order cannot deadlock with this cancel.
-        order.getItems().stream()
-                .sorted(Comparator.comparing(OrderItem::getProductId))
-                .forEach(item -> productService.increaseStock(item.getProductId(), item.getQuantity()));
+        restoreStock(order);
+
+        return orderMapper.toResponse(order);
+    }
+
+    // Admin transition: the conditional update makes a double transition harmless.
+    @Transactional
+    public OrderResponse updateStatus(Long id, OrderStatus target) {
+        Set<OrderStatus> from = ALLOWED_PREVIOUS.getOrDefault(target, Set.of());
+
+        // an empty set is checked first because "in ()" is not valid SQL
+        if (from.isEmpty() || orderRepository.updateStatus(id, from, target, Instant.now()) == 0) {
+            throw orderRepository.existsById(id)
+                    ? new InvalidStatusTransitionException(target)
+                    : new OrderNotFoundException();
+        }
+
+        // Loaded only AFTER the update, same reason as in cancel.
+        Order order = orderRepository.findWithItemsById(id).orElseThrow(OrderNotFoundException::new);
+
+        if (target == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
 
         return orderMapper.toResponse(order);
     }
 
     public PageResponse<OrderSummaryResponse> listOwn(Long userId, Pageable pageable) {
-        for (Sort.Order order : pageable.getSort()) {
-            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
-                throw new InvalidSortException(order.getProperty());
-            }
-        }
+        validateSort(pageable);
         return PageResponse.from(orderRepository.findByUserId(userId, pageable).map(orderMapper::toSummary));
+    }
+
+    public PageResponse<OrderSummaryResponse> listAll(OrderStatus status, Pageable pageable) {
+        validateSort(pageable);
+        Page<Order> page = status == null
+                ? orderRepository.findAll(pageable)
+                : orderRepository.findByStatus(status, pageable);
+        return PageResponse.from(page.map(orderMapper::toSummary));
     }
 
     public OrderResponse getOrder(Long id, Long userId, boolean isAdmin) {
@@ -120,6 +156,21 @@ public class OrderService {
                 .filter(order -> isAdmin || order.getUserId().equals(userId))
                 .map(orderMapper::toResponse)
                 .orElseThrow(OrderNotFoundException::new);
+    }
+
+    // Same lock order as checkout, so a concurrent order cannot deadlock with this cancel.
+    private void restoreStock(Order order) {
+        order.getItems().stream()
+                .sorted(Comparator.comparing(OrderItem::getProductId))
+                .forEach(item -> productService.increaseStock(item.getProductId(), item.getQuantity()));
+    }
+
+    private static void validateSort(Pageable pageable) {
+        for (Sort.Order order : pageable.getSort()) {
+            if (!SORTABLE_FIELDS.contains(order.getProperty())) {
+                throw new InvalidSortException(order.getProperty());
+            }
+        }
     }
 
     private static Address toAddress(ShippingAddress address) {

@@ -1,6 +1,7 @@
 package com.eyup.kervan.order.repository;
 
 import com.eyup.kervan.order.entity.Order;
+import com.eyup.kervan.order.entity.OrderStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
@@ -30,4 +32,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     int cancelIfOwner(Long id, Long userId, Instant now);
 
     boolean existsByIdAndUserId(Long id, Long userId);
+
+    // Same idea as cancelIfOwner: the WHERE clause re-checks the current status under the row lock.
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update Order o set o.status = :to, o.updatedAt = :now
+            where o.id = :id and o.status in :from
+            """)
+    int updateStatus(Long id, Collection<OrderStatus> from, OrderStatus to, Instant now);
+
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 }
