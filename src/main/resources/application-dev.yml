@@ -1,0 +1,9 @@
+# Datasource, Redis and RabbitMQ connections come from compose.yaml via spring-boot-docker-compose,
+# so they are not configured here.
+logging:
+  level:
+    "[org.hibernate.SQL]": debug
+management:
+  endpoint:
+    health:
+      show-details: always
