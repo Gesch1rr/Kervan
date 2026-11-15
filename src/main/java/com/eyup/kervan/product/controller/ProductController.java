@@ -5,6 +5,7 @@ import com.eyup.kervan.product.dto.CreateProductRequest;
 import com.eyup.kervan.product.dto.ProductFilter;
 import com.eyup.kervan.product.dto.ProductResponse;
 import com.eyup.kervan.product.dto.UpdateProductRequest;
+import com.eyup.kervan.product.dto.UpdateStockRequest;
 import com.eyup.kervan.product.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -55,6 +57,12 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     public ProductResponse update(@PathVariable Long id, @Valid @RequestBody UpdateProductRequest request) {
         return productService.update(id, request);
+    }
+
+    @PatchMapping("/{id}/stock")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ProductResponse adjustStock(@PathVariable Long id, @Valid @RequestBody UpdateStockRequest request) {
+        return productService.adjustStock(id, request);
     }
 
     @DeleteMapping("/{id}")

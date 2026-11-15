@@ -1,6 +1,7 @@
 package com.eyup.kervan.product.mapper;
 
 import com.eyup.kervan.product.dto.ProductResponse;
+import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.entity.Product;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
@@ -9,4 +10,6 @@ import org.mapstruct.MappingConstants;
 public interface ProductMapper {
 
     ProductResponse toResponse(Product product);
+
+    ProductSummary toSummary(Product product);
 }

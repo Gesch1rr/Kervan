@@ -5,10 +5,13 @@ import com.eyup.kervan.common.exception.InvalidSortException;
 import com.eyup.kervan.product.dto.CreateProductRequest;
 import com.eyup.kervan.product.dto.ProductFilter;
 import com.eyup.kervan.product.dto.ProductResponse;
+import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.dto.UpdateProductRequest;
+import com.eyup.kervan.product.dto.UpdateStockRequest;
 import com.eyup.kervan.product.entity.Category;
 import com.eyup.kervan.product.entity.Product;
 import com.eyup.kervan.product.exception.CategoryNotFoundException;
+import com.eyup.kervan.product.exception.InsufficientStockException;
 import com.eyup.kervan.product.exception.ProductAlreadyExistsException;
 import com.eyup.kervan.product.exception.ProductNotFoundException;
 import com.eyup.kervan.product.mapper.ProductMapper;
@@ -26,9 +29,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -72,6 +79,18 @@ public class ProductService {
         return productMapper.toResponse(product);
     }
 
+    public ProductSummary getSummary(Long id) {
+        return productRepository.findById(id)
+                .map(productMapper::toSummary)
+                .orElseThrow(() -> new ProductNotFoundException(id));
+    }
+
+    // One query for many products (avoids N+1); missing ids are simply absent from the map.
+    public Map<Long, ProductSummary> findSummaries(Collection<Long> ids) {
+        return productRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Product::getId, productMapper::toSummary));
+    }
+
     @Transactional
     public ProductResponse create(CreateProductRequest request) {
         String name = request.name().trim();
@@ -109,6 +128,43 @@ public class ProductService {
     public void delete(Long id) {
         // soft delete; order history keeps pointing at the product
         findProduct(id).deactivate();
+    }
+
+    // Joins the caller's transaction (checkout), so a later failure rolls the stock change back too.
+    @Transactional
+    @CacheEvict(cacheNames = CACHE_NAME, key = "#productId")
+    public void decreaseStock(Long productId, int quantity) {
+        requirePositive(quantity);
+        if (productRepository.decreaseStock(productId, quantity, Instant.now()) == 0) {
+            throw new InsufficientStockException(productId);
+        }
+    }
+
+    @Transactional
+    @CacheEvict(cacheNames = CACHE_NAME, key = "#productId")
+    public void increaseStock(Long productId, int quantity) {
+        requirePositive(quantity);
+        if (productRepository.increaseStock(productId, quantity, Instant.now()) == 0) {
+            throw new ProductNotFoundException(productId);
+        }
+    }
+
+    @Transactional
+    @CacheEvict(cacheNames = CACHE_NAME, key = "#id")
+    public ProductResponse adjustStock(Long id, UpdateStockRequest request) {
+        if (productRepository.adjustStock(id, request.delta(), Instant.now()) == 0) {
+            if (!productRepository.existsById(id)) {
+                throw new ProductNotFoundException(id);
+            }
+            throw new InsufficientStockException(id);
+        }
+        return productMapper.toResponse(findProduct(id));
+    }
+
+    private static void requirePositive(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("quantity must be positive");
+        }
     }
 
     private Product findProduct(Long id) {

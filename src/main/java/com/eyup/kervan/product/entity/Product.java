@@ -15,11 +15,15 @@ import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.math.BigDecimal;
 
+// Only changed columns are written on update. Otherwise an admin renaming a product would also write
+// back the stock value it loaded earlier and silently undo stock changes made by orders in between.
 @Getter
 @Entity
+@DynamicUpdate
 @Table(name = "products")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Product extends BaseEntity {
