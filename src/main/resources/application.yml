@@ -19,9 +19,7 @@ spring:
   flyway:
     locations: classpath:db/migration
   cache:
-    type: redis
-    redis:
-      key-prefix: 'kervan:'
+    type: redis  # key prefix, TTLs and serializer are set in CacheConfig
   data:
     web:
       pageable:
@@ -53,6 +51,10 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 kervan:
+  cache:
+    default-ttl: 10m
+    ttl:
+      categories: 1h
   jwt:
     issuer: kervan
     access-token-ttl: 15m
