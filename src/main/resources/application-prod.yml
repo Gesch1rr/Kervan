@@ -31,3 +31,7 @@ management:
 kervan:
   jwt:
     secret: ${KERVAN_JWT_SECRET}  # no default on purpose; the app must fail to start without it
+  admin:
+    # optional: when both are set and no admin exists yet, one is created at startup
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}

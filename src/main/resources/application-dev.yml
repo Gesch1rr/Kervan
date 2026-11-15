@@ -10,3 +10,6 @@ management:
 kervan:
   jwt:
     secret: dev-only-secret-0123456789abcdef0123456789abcdef  # dev-only value, never use in prod
+  admin:
+    email: admin@kervan.local
+    password: admin12345  # dev-only value
