@@ -3,6 +3,7 @@ package com.eyup.kervan.cart.service;
 import com.eyup.kervan.cart.dto.AddCartItemRequest;
 import com.eyup.kervan.cart.dto.CartItemResponse;
 import com.eyup.kervan.cart.dto.CartResponse;
+import com.eyup.kervan.cart.dto.CartSnapshot;
 import com.eyup.kervan.cart.dto.UpdateCartItemRequest;
 import com.eyup.kervan.cart.entity.Cart;
 import com.eyup.kervan.cart.entity.CartItem;
@@ -83,7 +84,18 @@ public class CartService {
         return toResponse(cart);
     }
 
-    // idempotent; checkout will call this too
+    // Locks the cart like every other write: if the user changes the cart on another device while checkout
+    // is running, one of the two fails instead of an order being placed for a cart that no longer exists.
+    @Transactional
+    public CartSnapshot getCartForCheckout(Long userId) {
+        return findCartForUpdate(userId)
+                .map(cart -> new CartSnapshot(cart.getItems().stream()
+                        .map(item -> new CartSnapshot.Line(item.getProductId(), item.getQuantity()))
+                        .toList()))
+                .orElseGet(() -> new CartSnapshot(List.of()));
+    }
+
+    // idempotent; also called by checkout
     @Transactional
     public void clearCart(Long userId) {
         findCartForUpdate(userId).ifPresent(Cart::clear);
