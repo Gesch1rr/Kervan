@@ -25,7 +25,8 @@ export const options = {
       exec: 'browse',
       startRate: 10,
       timeUnit: '1s',
-      preAllocatedVUs: 50,
+      // Enough VUs up front, so VU creation during the run does not distort latency.
+      preAllocatedVUs: 200,
       maxVUs: 400,
       stages: [
         { target: PEAK_RPS, duration: '2m' },
@@ -39,6 +40,7 @@ export const options = {
       duration: '3m',
     },
   },
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   thresholds: {
     http_req_failed: ['rate<0.01'],
     'http_req_duration{scenario:browse}': ['p(95)<300'],
