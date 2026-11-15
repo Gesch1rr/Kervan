@@ -1,0 +1,9 @@
+target/
+.git/
+.github/
+.idea/
+load-tests/
+*.iml
+.env
+.claude/
+CLAUDE.md
