@@ -33,9 +33,7 @@ public class CategoryService {
     private final ProductRepository productRepository;
     private final CategoryMapper categoryMapper;
 
-    // The whole list is cached under this one key. Writes evict that key instead of clearing the cache:
-    // RedisCache.clear() may finish after the request, and a late clear can delete a list that a reader
-    // has just cached again. evict() deletes the single key right away.
+    // The whole list is cached under this one key, so writes evict just that key.
     @Cacheable(cacheNames = CACHE_NAME, key = "'all'")
     public List<CategoryResponse> list() {
         // a plain ArrayList, because JDK-internal immutable lists (stream().toList()) cannot be rebuilt from the cached JSON

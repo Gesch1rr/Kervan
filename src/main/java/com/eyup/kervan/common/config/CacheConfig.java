@@ -5,6 +5,8 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
+import org.springframework.data.redis.cache.RedisCacheWriter;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
@@ -25,8 +27,13 @@ public class CacheConfig {
 
     @Bean
     RedisCacheManagerBuilderCustomizer redisCacheManagerCustomizer(RedisCacheConfiguration defaults,
-                                                                   CacheTtlProperties properties) {
+                                                                   CacheTtlProperties properties,
+                                                                   RedisConnectionFactory connectionFactory) {
         return builder -> {
+            // Spring Data Redis 4 writes and evicts asynchronously by default: the response can go out before
+            // the SET/DEL reaches Redis, so the next request may still see the old state. Immediate writes
+            // finish before the method returns.
+            builder.cacheWriter(RedisCacheWriter.create(connectionFactory, writer -> writer.immediateWrites()));
             // Evictions and puts wait for the surrounding transaction to commit, so a reader cannot
             // re-cache data that is about to change.
             builder.transactionAware();
