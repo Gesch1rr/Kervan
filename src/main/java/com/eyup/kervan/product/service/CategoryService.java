@@ -5,9 +5,11 @@ import com.eyup.kervan.product.dto.CreateCategoryRequest;
 import com.eyup.kervan.product.dto.UpdateCategoryRequest;
 import com.eyup.kervan.product.entity.Category;
 import com.eyup.kervan.product.exception.CategoryAlreadyExistsException;
+import com.eyup.kervan.product.exception.CategoryInUseException;
 import com.eyup.kervan.product.exception.CategoryNotFoundException;
 import com.eyup.kervan.product.mapper.CategoryMapper;
 import com.eyup.kervan.product.repository.CategoryRepository;
+import com.eyup.kervan.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -27,6 +29,7 @@ public class CategoryService {
     public static final String CACHE_NAME = "categories";
 
     private final CategoryRepository categoryRepository;
+    private final ProductRepository productRepository;
     private final CategoryMapper categoryMapper;
 
     @Cacheable(cacheNames = CACHE_NAME, key = "'all'")
@@ -66,6 +69,10 @@ public class CategoryService {
     public void delete(Long id) {
         if (!categoryRepository.existsById(id)) {
             throw new CategoryNotFoundException(id);
+        }
+        // explicit check gives a clear 409; the foreign key would only fail at commit time
+        if (productRepository.existsByCategoryId(id)) {
+            throw new CategoryInUseException(id);
         }
         categoryRepository.deleteById(id);
     }
