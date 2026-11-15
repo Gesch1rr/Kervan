@@ -1,11 +1,17 @@
 package com.eyup.kervan.product.controller;
 
+import com.eyup.kervan.common.dto.PageResponse;
 import com.eyup.kervan.product.dto.CreateProductRequest;
+import com.eyup.kervan.product.dto.ProductFilter;
 import com.eyup.kervan.product.dto.ProductResponse;
 import com.eyup.kervan.product.dto.UpdateProductRequest;
 import com.eyup.kervan.product.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +30,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final ProductService productService;
+
+    // @ParameterObject makes springdoc show the record fields as query params instead of a body
+    @GetMapping
+    public PageResponse<ProductResponse> list(
+            @Valid @ParameterObject ProductFilter filter,
+            @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return productService.list(filter, pageable);
+    }
 
     @GetMapping("/{id}")
     public ProductResponse get(@PathVariable Long id) {
