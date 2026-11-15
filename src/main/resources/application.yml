@@ -55,6 +55,7 @@ kervan:
     default-ttl: 10m
     ttl:
       categories: 1h
+      products: 5m
   jwt:
     issuer: kervan
     access-token-ttl: 15m

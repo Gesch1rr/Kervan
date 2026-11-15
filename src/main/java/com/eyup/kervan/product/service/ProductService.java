@@ -16,6 +16,8 @@ import com.eyup.kervan.product.repository.CategoryRepository;
 import com.eyup.kervan.product.repository.ProductRepository;
 import com.eyup.kervan.product.repository.ProductSpecifications;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -32,6 +34,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductService {
+
+    public static final String CACHE_NAME = "products";
 
     // whitelist: blocks sorting by unknown fields, which would otherwise be a 500
     private static final Set<String> SORTABLE_FIELDS = Set.of("id", "name", "price", "createdAt");
@@ -57,6 +61,8 @@ public class ProductService {
         return PageResponse.from(productRepository.findAll(Specification.allOf(specs), pageable).map(productMapper::toResponse));
     }
 
+    // Only found, active products are cached: exceptions are never cached, so a 404 is not remembered.
+    @Cacheable(cacheNames = CACHE_NAME, key = "#id")
     public ProductResponse getActiveById(Long id) {
         Product product = findProduct(id);
         // soft-deleted products are invisible to the public API
@@ -80,6 +86,7 @@ public class ProductService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CACHE_NAME, key = "#id")
     public ProductResponse update(Long id, UpdateProductRequest request) {
         Product product = findProduct(id);
         // someone else changed the product after this client loaded it
@@ -98,6 +105,7 @@ public class ProductService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = CACHE_NAME, key = "#id")
     public void delete(Long id) {
         // soft delete; order history keeps pointing at the product
         findProduct(id).deactivate();

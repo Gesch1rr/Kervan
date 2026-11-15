@@ -13,6 +13,7 @@ import com.eyup.kervan.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,8 +52,12 @@ public class CategoryService {
         return categoryMapper.toResponse(categoryRepository.save(new Category(name, slug)));
     }
 
+    // Cached products embed their category name, so a rename must drop them too.
     @Transactional
-    @CacheEvict(cacheNames = CACHE_NAME, allEntries = true)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = CACHE_NAME, allEntries = true),
+            @CacheEvict(cacheNames = ProductService.CACHE_NAME, allEntries = true)
+    })
     public CategoryResponse update(Long id, UpdateCategoryRequest request) {
         Category category = findCategory(id);
         String name = request.name().trim();
