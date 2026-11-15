@@ -48,6 +48,12 @@ public class OrderController {
         return orderService.getOrder(id, userId(auth), isAdmin(auth));
     }
 
+    // owner only; admins cancel through the separate admin endpoint
+    @PostMapping("/{id}/cancel")
+    public OrderResponse cancel(JwtAuthenticationToken auth, @PathVariable Long id) {
+        return orderService.cancel(id, userId(auth));
+    }
+
     private static Long userId(JwtAuthenticationToken auth) {
         return Long.valueOf(auth.getToken().getSubject());
     }

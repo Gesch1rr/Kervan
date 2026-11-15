@@ -6,6 +6,7 @@ import com.eyup.kervan.cart.service.CartService;
 import com.eyup.kervan.order.dto.CreateOrderRequest;
 import com.eyup.kervan.order.dto.ShippingAddress;
 import com.eyup.kervan.order.exception.EmptyCartException;
+import com.eyup.kervan.order.exception.OrderNotCancellableException;
 import com.eyup.kervan.product.exception.InsufficientStockException;
 import com.eyup.kervan.user.entity.Role;
 import com.eyup.kervan.user.service.UserService;
@@ -112,6 +113,28 @@ class OrderConcurrencyIT extends AbstractIntegrationTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from orders where user_id = ?", Integer.class, user))
                 .isEqualTo(1);
         assertThat(stockOf(product)).isEqualTo(8);
+    }
+
+    // A double click on "cancel" must not put the same items back twice. Without the conditional
+    // UPDATE several cancels could each put the 4 items back.
+    @Test
+    void concurrentCancelsRestoreStockOnce() throws Exception {
+        Long product = createProduct(10);
+        Long user = newUser();
+        cartService.addItem(user, new AddCartItemRequest(product, 4));
+        Long orderId = orderService.placeOrder(user, ORDER).id();
+        assertThat(stockOf(product)).isEqualTo(6);
+
+        List<Callable<Object>> tasks = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            tasks.add(() -> orderService.cancel(orderId, user));
+        }
+        List<Throwable> failures = runAtOnce(tasks);
+
+        assertThat(failures).hasSize(4).allMatch(OrderNotCancellableException.class::isInstance);
+        assertThat(stockOf(product)).isEqualTo(10);
+        assertThat(jdbcTemplate.queryForObject("select status from orders where id = ?", String.class, orderId))
+                .isEqualTo("CANCELLED");
     }
 
     // Starts all tasks at the same moment and returns the exceptions of the ones that failed.

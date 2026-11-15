@@ -10,7 +10,9 @@ import com.eyup.kervan.order.dto.OrderSummaryResponse;
 import com.eyup.kervan.order.dto.ShippingAddress;
 import com.eyup.kervan.order.entity.Address;
 import com.eyup.kervan.order.entity.Order;
+import com.eyup.kervan.order.entity.OrderItem;
 import com.eyup.kervan.order.exception.EmptyCartException;
+import com.eyup.kervan.order.exception.OrderNotCancellableException;
 import com.eyup.kervan.order.exception.OrderNotFoundException;
 import com.eyup.kervan.order.exception.ProductUnavailableException;
 import com.eyup.kervan.order.mapper.OrderMapper;
@@ -23,6 +25,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -76,6 +79,29 @@ public class OrderService {
         }
         orderRepository.save(order);
         cartService.clearCart(userId);
+        return orderMapper.toResponse(order);
+    }
+
+    // One transaction: if restoring the stock fails, the cancel is rolled back too.
+    @Transactional
+    public OrderResponse cancel(Long id, Long userId) {
+        // Conditional update first: of two concurrent cancels only one gets past this point.
+        if (orderRepository.cancelIfOwner(id, userId, Instant.now()) == 0) {
+            // owner with a non-pending order vs. unknown/foreign order
+            throw orderRepository.existsByIdAndUserId(id, userId)
+                    ? new OrderNotCancellableException()
+                    : new OrderNotFoundException();
+        }
+
+        // Loaded only AFTER the update; an Order loaded before it would still be PENDING in the
+        // persistence context, because the update does not clear it.
+        Order order = orderRepository.findWithItemsById(id).orElseThrow(OrderNotFoundException::new);
+
+        // Same lock order as checkout, so a concurrent order cannot deadlock with this cancel.
+        order.getItems().stream()
+                .sorted(Comparator.comparing(OrderItem::getProductId))
+                .forEach(item -> productService.increaseStock(item.getProductId(), item.getQuantity()));
+
         return orderMapper.toResponse(order);
     }
 
