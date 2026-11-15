@@ -68,4 +68,13 @@ public class Cart extends BaseEntity {
                 item -> item.changeQuantity(item.getQuantity() + quantity),
                 () -> items.add(new CartItem(this, productId, quantity)));
     }
+
+    // orphanRemoval turns removing an item from the list into a DELETE of its row.
+    public boolean removeItem(Long productId) {
+        return items.removeIf(item -> item.getProductId().equals(productId));
+    }
+
+    public void clear() {
+        items.clear();
+    }
 }

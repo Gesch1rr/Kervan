@@ -3,8 +3,10 @@ package com.eyup.kervan.cart.service;
 import com.eyup.kervan.cart.dto.AddCartItemRequest;
 import com.eyup.kervan.cart.dto.CartItemResponse;
 import com.eyup.kervan.cart.dto.CartResponse;
+import com.eyup.kervan.cart.dto.UpdateCartItemRequest;
 import com.eyup.kervan.cart.entity.Cart;
 import com.eyup.kervan.cart.entity.CartItem;
+import com.eyup.kervan.cart.exception.CartItemNotFoundException;
 import com.eyup.kervan.cart.repository.CartRepository;
 import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.exception.InsufficientStockException;
@@ -48,6 +50,39 @@ public class CartService {
         }
         cart.addItem(product.id(), request.quantity());
         return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse updateItem(Long userId, Long productId, UpdateCartItemRequest request) {
+        Cart cart = cartRepository.findWithItemsByUserId(userId)
+                .orElseThrow(() -> new CartItemNotFoundException(productId));
+        CartItem item = cart.findItem(productId)
+                .orElseThrow(() -> new CartItemNotFoundException(productId));
+        ProductSummary product = productService.getSummary(productId);
+        if (!product.active()) {
+            throw new ProductNotFoundException(productId);
+        }
+        if (request.quantity() > product.stock()) {
+            throw new InsufficientStockException(productId);
+        }
+        item.changeQuantity(request.quantity());
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse removeItem(Long userId, Long productId) {
+        Cart cart = cartRepository.findWithItemsByUserId(userId)
+                .orElseThrow(() -> new CartItemNotFoundException(productId));
+        if (!cart.removeItem(productId)) {
+            throw new CartItemNotFoundException(productId);
+        }
+        return toResponse(cart);
+    }
+
+    // idempotent; checkout will call this too
+    @Transactional
+    public void clearCart(Long userId) {
+        cartRepository.findWithItemsByUserId(userId).ifPresent(Cart::clear);
     }
 
     private CartResponse toResponse(Cart cart) {

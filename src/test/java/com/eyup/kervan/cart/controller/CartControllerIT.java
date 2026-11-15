@@ -13,6 +13,7 @@ import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.util.UUID;
@@ -22,6 +23,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +37,9 @@ class CartControllerIT extends AbstractIntegrationTest {
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private String adminToken() {
         return bearerToken(1L, Role.ADMIN);
@@ -86,6 +91,24 @@ class CartControllerIT extends AbstractIntegrationTest {
     private ResultActions getCart(Long userId) throws Exception {
         return mockMvc.perform(get("/api/v1/cart")
                 .header("Authorization", token(userId)));
+    }
+
+    private ResultActions updateItem(Long userId, Long productId, int quantity) throws Exception {
+        return mockMvc.perform(put("/api/v1/cart/items/{productId}", productId)
+                .header("Authorization", token(userId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"quantity\":%d}".formatted(quantity)));
+    }
+
+    private ResultActions removeItem(Long userId, Long productId) throws Exception {
+        return mockMvc.perform(delete("/api/v1/cart/items/{productId}", productId)
+                .header("Authorization", token(userId)));
+    }
+
+    private int itemRows(Long userId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from cart_items ci join carts c on c.id = ci.cart_id where c.user_id = ?",
+                Integer.class, userId);
     }
 
     @Test
@@ -217,5 +240,127 @@ class CartControllerIT extends AbstractIntegrationTest {
         } finally {
             statistics.setStatisticsEnabled(false);
         }
+    }
+
+    @Test
+    void updateChangesQuantity() throws Exception {
+        Long user = newUser();
+        Long product = createProduct(createCategory(), "10.00", 5);
+
+        addItem(user, product, 1).andExpect(status().isOk());
+
+        updateItem(user, product, 4)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].quantity").value(4))
+                .andExpect(jsonPath("$.items[0].lineTotal").value(40.0))
+                .andExpect(jsonPath("$.totalAmount").value(40.0));
+    }
+
+    @Test
+    void updateCannotExceedStock() throws Exception {
+        Long user = newUser();
+        Long product = createProduct(createCategory(), "10.00", 5);
+
+        addItem(user, product, 1).andExpect(status().isOk());
+
+        updateItem(user, product, 6)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSUFFICIENT_STOCK"));
+
+        getCart(user)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].quantity").value(1));
+    }
+
+    @Test
+    void updateOfProductNotInCartReturns404() throws Exception {
+        Long user = newUser();
+        Long category = createCategory();
+        Long productA = createProduct(category, "10.00", 5);
+        Long productB = createProduct(category, "10.00", 5);
+
+        updateItem(user, productA, 2)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_ITEM_NOT_FOUND"));
+
+        addItem(user, productA, 1).andExpect(status().isOk());
+
+        updateItem(user, productB, 2)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_ITEM_NOT_FOUND"));
+    }
+
+    @Test
+    void updateRejectsZero() throws Exception {
+        Long user = newUser();
+        Long product = createProduct(createCategory(), "10.00", 5);
+
+        addItem(user, product, 1).andExpect(status().isOk());
+
+        updateItem(user, product, 0)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void removeDeletesOnlyThatLine() throws Exception {
+        Long user = newUser();
+        Long category = createCategory();
+        Long productA = createProduct(category, "10.00", 5);
+        Long productB = createProduct(category, "20.00", 5);
+
+        addItem(user, productA, 1).andExpect(status().isOk());
+        addItem(user, productB, 1).andExpect(status().isOk());
+
+        removeItem(user, productA)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].productId").value(productB.intValue()));
+
+        // the row is really deleted, not just hidden
+        assertThat(itemRows(user)).isEqualTo(1);
+    }
+
+    @Test
+    void removeOfMissingItemReturns404() throws Exception {
+        Long user = newUser();
+        Long category = createCategory();
+        Long productA = createProduct(category, "10.00", 5);
+        Long productB = createProduct(category, "10.00", 5);
+
+        addItem(user, productA, 1).andExpect(status().isOk());
+
+        removeItem(user, productB)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CART_ITEM_NOT_FOUND"));
+    }
+
+    @Test
+    void clearEmptiesCart() throws Exception {
+        Long user = newUser();
+        Long category = createCategory();
+        Long productA = createProduct(category, "10.00", 5);
+        Long productB = createProduct(category, "20.00", 5);
+
+        addItem(user, productA, 1).andExpect(status().isOk());
+        addItem(user, productB, 1).andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/cart")
+                        .header("Authorization", token(user)))
+                .andExpect(status().isNoContent());
+
+        getCart(user)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(0)))
+                .andExpect(jsonPath("$.totalAmount").value(0));
+
+        assertThat(itemRows(user)).isZero();
+    }
+
+    @Test
+    void clearWithoutCartIsAllowed() throws Exception {
+        mockMvc.perform(delete("/api/v1/cart")
+                        .header("Authorization", token(newUser())))
+                .andExpect(status().isNoContent());
     }
 }
