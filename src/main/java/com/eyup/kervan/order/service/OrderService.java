@@ -23,6 +23,7 @@ import com.eyup.kervan.order.repository.OrderRepository;
 import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -139,6 +141,18 @@ public class OrderService {
         }
 
         return orderMapper.toResponse(order);
+    }
+
+    // Called by the event consumer. Already confirmed or cancelled -> nothing to do (the conditional update
+    // matches 0 rows). An unknown id is an error: the event is sent only after the order was committed.
+    @Transactional
+    public void confirm(Long id) {
+        if (orderRepository.updateStatus(id, Set.of(OrderStatus.PENDING), OrderStatus.CONFIRMED, Instant.now()) == 0) {
+            if (!orderRepository.existsById(id)) {
+                throw new OrderNotFoundException();
+            }
+            log.debug("Order {} is no longer pending, not confirmed", id);
+        }
     }
 
     public PageResponse<OrderSummaryResponse> listOwn(Long userId, Pageable pageable) {
