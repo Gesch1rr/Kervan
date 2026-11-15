@@ -28,3 +28,6 @@ management:
   endpoint:
     health:
       show-details: never
+kervan:
+  jwt:
+    secret: ${KERVAN_JWT_SECRET}  # no default on purpose; the app must fail to start without it

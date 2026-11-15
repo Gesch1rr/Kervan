@@ -52,3 +52,8 @@ management:
 springdoc:
   api-docs:
     path: /v3/api-docs
+kervan:
+  jwt:
+    issuer: kervan
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
