@@ -38,3 +38,7 @@ CLAUDE.md
 
 ### Local environment ###
 .env
+
+### Load test results ###
+load-tests/results/*
+!load-tests/results/.gitkeep
