@@ -33,6 +33,9 @@ public class CategoryService {
     private final ProductRepository productRepository;
     private final CategoryMapper categoryMapper;
 
+    // The whole list is cached under this one key. Writes evict that key instead of clearing the cache:
+    // RedisCache.clear() may finish after the request, and a late clear can delete a list that a reader
+    // has just cached again. evict() deletes the single key right away.
     @Cacheable(cacheNames = CACHE_NAME, key = "'all'")
     public List<CategoryResponse> list() {
         // a plain ArrayList, because JDK-internal immutable lists (stream().toList()) cannot be rebuilt from the cached JSON
@@ -42,7 +45,7 @@ public class CategoryService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = CACHE_NAME, allEntries = true)
+    @CacheEvict(cacheNames = CACHE_NAME, key = "'all'")
     public CategoryResponse create(CreateCategoryRequest request) {
         String name = request.name().trim();
         String slug = SlugGenerator.toSlug(name);
@@ -55,7 +58,7 @@ public class CategoryService {
     // Cached products embed their category name, so a rename must drop them too.
     @Transactional
     @Caching(evict = {
-            @CacheEvict(cacheNames = CACHE_NAME, allEntries = true),
+            @CacheEvict(cacheNames = CACHE_NAME, key = "'all'"),
             @CacheEvict(cacheNames = ProductService.CACHE_NAME, allEntries = true)
     })
     public CategoryResponse update(Long id, UpdateCategoryRequest request) {
@@ -70,7 +73,7 @@ public class CategoryService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = CACHE_NAME, allEntries = true)
+    @CacheEvict(cacheNames = CACHE_NAME, key = "'all'")
     public void delete(Long id) {
         if (!categoryRepository.existsById(id)) {
             throw new CategoryNotFoundException(id);
