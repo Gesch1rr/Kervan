@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +25,11 @@ class UserControllerIT extends AbstractIntegrationTest {
     private UserResponse newUser() {
         String email = "user-" + UUID.randomUUID() + "@test.local";
         return userService.create(email, "password123", "Test User", Role.USER);
+    }
+
+    private String adminToken() {
+        // role comes from the token; the id is irrelevant for admin endpoints
+        return bearerToken(1L, Role.ADMIN);
     }
 
     @Test
@@ -82,6 +89,57 @@ class UserControllerIT extends AbstractIntegrationTest {
     void meForUnknownUserReturns404() throws Exception {
         mockMvc.perform(get("/api/v1/users/me")
                         .header("Authorization", bearerToken(999_999_999L, Role.USER)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
+    }
+
+    @Test
+    void listUsersRequiresAdmin() throws Exception {
+        UserResponse user = newUser();
+
+        mockMvc.perform(get("/api/v1/users")
+                        .header("Authorization", bearerToken(user.id(), Role.USER)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void adminCanListUsersPageByPage() throws Exception {
+        newUser();
+        newUser();
+
+        mockMvc.perform(get("/api/v1/users?size=1&page=0")
+                        .header("Authorization", adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(1))
+                .andExpect(jsonPath("$.totalElements", greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.content[0].passwordHash").doesNotExist());
+    }
+
+    @Test
+    void unsupportedSortReturns400() throws Exception {
+        mockMvc.perform(get("/api/v1/users?sort=passwordHash")
+                        .header("Authorization", adminToken()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_SORT"));
+    }
+
+    @Test
+    void adminCanGetUserById() throws Exception {
+        UserResponse user = newUser();
+
+        mockMvc.perform(get("/api/v1/users/{id}", user.id())
+                        .header("Authorization", adminToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(user.email()));
+    }
+
+    @Test
+    void getUnknownUserByIdReturns404() throws Exception {
+        mockMvc.perform(get("/api/v1/users/999999999")
+                        .header("Authorization", adminToken()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
     }
