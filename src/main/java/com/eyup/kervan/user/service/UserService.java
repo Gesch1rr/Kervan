@@ -53,6 +53,11 @@ public class UserService {
                 .map(userMapper::toCredentials);
     }
 
+    public Optional<UserCredentials> findCredentialsById(Long id) {
+        return userRepository.findById(id)
+                .map(userMapper::toCredentials);
+    }
+
     public PageResponse<UserResponse> list(Pageable pageable) {
         for (Sort.Order order : pageable.getSort()) {
             if (!SORTABLE_FIELDS.contains(order.getProperty())) {

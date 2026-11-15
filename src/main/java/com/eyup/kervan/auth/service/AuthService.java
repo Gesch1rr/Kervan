@@ -2,8 +2,10 @@ package com.eyup.kervan.auth.service;
 
 import com.eyup.kervan.auth.dto.AuthResponse;
 import com.eyup.kervan.auth.dto.LoginRequest;
+import com.eyup.kervan.auth.dto.RefreshTokenRequest;
 import com.eyup.kervan.auth.dto.RegisterRequest;
 import com.eyup.kervan.auth.exception.InvalidCredentialsException;
+import com.eyup.kervan.auth.exception.InvalidRefreshTokenException;
 import com.eyup.kervan.auth.exception.PasswordTooLongException;
 import com.eyup.kervan.user.dto.UserCredentials;
 import com.eyup.kervan.user.dto.UserResponse;
@@ -23,12 +25,17 @@ public class AuthService {
 
     private final UserService userService;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
     private final PasswordEncoder passwordEncoder;
     private final String dummyPasswordHash;
 
-    public AuthService(UserService userService, JwtService jwtService, PasswordEncoder passwordEncoder) {
+    public AuthService(UserService userService,
+                       JwtService jwtService,
+                       RefreshTokenService refreshTokenService,
+                       PasswordEncoder passwordEncoder) {
         this.userService = userService;
         this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
         this.passwordEncoder = passwordEncoder;
         this.dummyPasswordHash = passwordEncoder.encode("dummy-password-for-timing");
     }
@@ -53,9 +60,26 @@ public class AuthService {
         if (credentials.isEmpty() || !passwordMatches || !credentials.get().enabled()) {
             throw new InvalidCredentialsException();
         }
-        UserCredentials user = credentials.get();
+        return issueTokens(credentials.get());
+    }
+
+    // the new access token uses the user's current role, so role changes apply at the next refresh
+    public AuthResponse refresh(RefreshTokenRequest request) {
+        Long userId = refreshTokenService.rotate(request.refreshToken());
+        UserCredentials user = userService.findCredentialsById(userId)
+                .filter(UserCredentials::enabled)
+                .orElseThrow(InvalidRefreshTokenException::new);
+        return issueTokens(user);
+    }
+
+    public void logout(RefreshTokenRequest request) {
+        refreshTokenService.revoke(request.refreshToken());
+    }
+
+    private AuthResponse issueTokens(UserCredentials user) {
         return new AuthResponse(
                 jwtService.createAccessToken(user.id(), user.role()),
+                refreshTokenService.issue(user.id()),
                 "Bearer",
                 jwtService.accessTokenTtlSeconds()
         );
