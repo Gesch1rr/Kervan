@@ -4,3 +4,11 @@ kervan:
   admin:
     email: admin@test.local
     password: test-admin-password
+
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false   # consumer tests start the listener themselves; other tests expect orders to stay PENDING
+        retry:
+          initial-interval: 50ms

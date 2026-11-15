@@ -12,6 +12,7 @@ import com.eyup.kervan.order.entity.Address;
 import com.eyup.kervan.order.entity.Order;
 import com.eyup.kervan.order.entity.OrderItem;
 import com.eyup.kervan.order.entity.OrderStatus;
+import com.eyup.kervan.order.event.OrderCreatedEvent;
 import com.eyup.kervan.order.exception.EmptyCartException;
 import com.eyup.kervan.order.exception.InvalidStatusTransitionException;
 import com.eyup.kervan.order.exception.OrderNotCancellableException;
@@ -22,6 +23,7 @@ import com.eyup.kervan.order.repository.OrderRepository;
 import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -56,6 +58,7 @@ public class OrderService {
     private final CartService cartService;
     private final ProductService productService;
     private final OrderMapper orderMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     // One transaction: if any step fails (e.g. stock runs out for the last line), the stock already taken
     // for earlier lines, the order and the emptied cart are all rolled back.
@@ -92,6 +95,7 @@ public class OrderService {
         }
         orderRepository.save(order);
         cartService.clearCart(userId);
+        eventPublisher.publishEvent(OrderCreatedEvent.of(order));
         return orderMapper.toResponse(order);
     }
 
