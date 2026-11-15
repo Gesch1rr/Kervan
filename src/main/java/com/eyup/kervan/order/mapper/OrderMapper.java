@@ -1,6 +1,7 @@
 package com.eyup.kervan.order.mapper;
 
 import com.eyup.kervan.order.dto.OrderResponse;
+import com.eyup.kervan.order.dto.OrderSummaryResponse;
 import com.eyup.kervan.order.entity.Order;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingConstants;
@@ -9,4 +10,6 @@ import org.mapstruct.MappingConstants;
 public interface OrderMapper {
 
     OrderResponse toResponse(Order order);
+
+    OrderSummaryResponse toSummary(Order order);
 }
