@@ -12,6 +12,8 @@ import com.eyup.kervan.product.dto.ProductSummary;
 import com.eyup.kervan.product.exception.InsufficientStockException;
 import com.eyup.kervan.product.exception.ProductNotFoundException;
 import com.eyup.kervan.product.service.ProductService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +30,7 @@ public class CartService {
 
     private final CartRepository cartRepository;
     private final ProductService productService;
+    private final EntityManager entityManager;
 
     public CartResponse getCart(Long userId) {
         // reading does not create a cart
@@ -41,7 +45,7 @@ public class CartService {
         if (!product.active()) {
             throw new ProductNotFoundException(product.id());
         }
-        Cart cart = cartRepository.findWithItemsByUserId(userId)
+        Cart cart = findCartForUpdate(userId)
                 .orElseGet(() -> cartRepository.save(new Cart(userId)));
         int newQuantity = cart.quantityOf(product.id()) + request.quantity();
         // early, friendly check; the real guarantee is the conditional stock update at checkout
@@ -54,7 +58,7 @@ public class CartService {
 
     @Transactional
     public CartResponse updateItem(Long userId, Long productId, UpdateCartItemRequest request) {
-        Cart cart = cartRepository.findWithItemsByUserId(userId)
+        Cart cart = findCartForUpdate(userId)
                 .orElseThrow(() -> new CartItemNotFoundException(productId));
         CartItem item = cart.findItem(productId)
                 .orElseThrow(() -> new CartItemNotFoundException(productId));
@@ -71,7 +75,7 @@ public class CartService {
 
     @Transactional
     public CartResponse removeItem(Long userId, Long productId) {
-        Cart cart = cartRepository.findWithItemsByUserId(userId)
+        Cart cart = findCartForUpdate(userId)
                 .orElseThrow(() -> new CartItemNotFoundException(productId));
         if (!cart.removeItem(productId)) {
             throw new CartItemNotFoundException(productId);
@@ -82,7 +86,18 @@ public class CartService {
     // idempotent; checkout will call this too
     @Transactional
     public void clearCart(Long userId) {
-        cartRepository.findWithItemsByUserId(userId).ifPresent(Cart::clear);
+        findCartForUpdate(userId).ifPresent(Cart::clear);
+    }
+
+    // For every write. Changing an item does not touch the carts row, so @Version alone would never notice two
+    // devices editing the same cart at once. FORCE_INCREMENT bumps the cart's version at commit anyway; the
+    // second writer then fails with an optimistic locking error (409) instead of silently overwriting the first.
+    // The lock is taken here and not in the query, because a locking query would also try to lock the
+    // fetched items, which have no version column.
+    private Optional<Cart> findCartForUpdate(Long userId) {
+        Optional<Cart> cart = cartRepository.findWithItemsByUserId(userId);
+        cart.ifPresent(found -> entityManager.lock(found, LockModeType.OPTIMISTIC_FORCE_INCREMENT));
+        return cart;
     }
 
     private CartResponse toResponse(Cart cart) {
