@@ -3,6 +3,7 @@ package com.eyup.kervan.user.service;
 import com.eyup.kervan.common.dto.PageResponse;
 import com.eyup.kervan.common.exception.InvalidSortException;
 import com.eyup.kervan.user.dto.UpdateUserRequest;
+import com.eyup.kervan.user.dto.UserCredentials;
 import com.eyup.kervan.user.dto.UserResponse;
 import com.eyup.kervan.user.entity.Role;
 import com.eyup.kervan.user.entity.User;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -44,6 +46,11 @@ public class UserService {
 
     public UserResponse getById(Long id) {
         return userMapper.toResponse(findUser(id));
+    }
+
+    public Optional<UserCredentials> findCredentialsByEmail(String email) {
+        return userRepository.findByEmail(normalizeEmail(email))
+                .map(userMapper::toCredentials);
     }
 
     public PageResponse<UserResponse> list(Pageable pageable) {
